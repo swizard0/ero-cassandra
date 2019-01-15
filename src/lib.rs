@@ -44,6 +44,27 @@ pub struct ClusterParams {
     pub use_schema: bool,
 }
 
+impl Default for ClusterParams {
+    fn default() -> ClusterParams {
+        ClusterParams {
+            contact_points: "127.0.0.1".to_string(),
+            keyspace: "default".to_string(),
+            num_threads_io: 2,
+            queue_size_io: 16384,
+            queue_size_event: 32768,
+            core_connections_per_host: 2,
+            max_connections_per_host: 4,
+            max_concurrent_creation: 2,
+            max_requests_per_flush: 256,
+            write_bytes_high_water_mark: 1024 * 1024,
+            pending_requests_high_water_mark: 512,
+            load_balance_round_robin: true,
+            token_aware_routing: false,
+            use_schema: false,
+        }
+    }
+}
+
 pub struct Params<N> {
     pub cluster_params: ClusterParams,
     pub lode_params: lode::Params<N>,

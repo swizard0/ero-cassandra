@@ -1,6 +1,6 @@
 [package]
 name = "ero-cassandra"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Alexey Voznyuk <me@swizard.info>"]
 edition = "2018"
 
@@ -10,3 +10,6 @@ log = "0.4"
 tokio = "0.1"
 futures = "0.1"
 cassandra-cpp = "0.13"
+
+[dev-dependencies]
+pretty_env_logger = "0.2"
