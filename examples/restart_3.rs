@@ -6,12 +6,15 @@ use std::{
 };
 
 use futures::{
+    Sink,
+    Stream,
     Future,
     future::{
         lazy,
         result,
         Either,
     },
+    sync::mpsc,
 };
 
 use cassandra_cpp::{
@@ -61,92 +64,113 @@ fn main() {
         },
     );
 
-    let client_future = resource
-        .using_resource_loop(
-            (0, query),
-            |session, (counter, query)| {
-                let future = lazy(move || {
-                    info!("performing query: {}, this is {} time", query, counter);
-                    let mut stmt = stmt!(&query);
-                    match stmt.set_consistency(Consistency::ONE) {
-                        Ok(..) =>
-                            Ok((stmt, query, counter)),
-                        Err(error) => {
-                            error!("error set_consistency: {:?}", error);
-                            Err(ErrorSeverity::Fatal(()))
+    let total = 10;
+
+    let (tx, rx) = mpsc::channel(0);
+
+    executor.spawn(
+        rx.fold((shutdown, 1), move |(shutdown, counter), ()| {
+            if counter >= total {
+                shutdown.shutdown();
+                Err(())
+            } else {
+                info!("received termination notification, total = {} received", counter);
+                Ok((shutdown, counter + 1))
+            }
+        }).map(|_seed| ())
+    );
+
+    for task_index in 0 .. total {
+        let notify_tx = tx.clone();
+        let client_future = resource
+            .clone()
+            .using_resource_loop(
+                (0, query.clone()),
+                move |session, (counter, query)| {
+                    let future = lazy(move || {
+                        info!("performing query: {}, this is {} time for task {}", query, counter, task_index);
+                        let mut stmt = stmt!(&query);
+                        match stmt.set_consistency(Consistency::ONE) {
+                            Ok(..) =>
+                                Ok((stmt, query, counter)),
+                            Err(error) => {
+                                error!("error set_consistency: {:?}", error);
+                                Err(ErrorSeverity::Fatal(()))
+                            }
                         }
-                    }
-                });
-                let future = future
-                    .and_then(move |(stmt, query, counter)| {
-                        session.execute(&stmt)
-                            .then(move |result| {
-                                match result {
-                                    Ok(cass_result) =>
-                                        Ok((cass_result, query, counter)),
-                                    Err(error) => {
-                                        error!("error executing statement: {:?}", error);
-                                        Err(ErrorSeverity::Fatal(()))
-                                    },
-                                }
-                            })
-                    })
-                    .and_then(|(cass_result, query, counter)| {
-                        match cass_result.first_row() {
-                            None => {
-                                info!("empty response on query: {}", query);
-                                Ok(Loop::Continue((counter + 1, query)))
-                            },
-                            Some(ref row) =>
-                                match row.get_column(0) {
-                                    Ok(ref value) =>
-                                        if value.is_null() {
-                                            info!("null column for first row");
-                                            Ok(Loop::Continue((counter + 1, query)))
-                                        } else {
-                                            match Value::get_string(value) {
-                                                Ok(data) => {
-                                                    info!("column = {} for first row", data);
-                                                    Ok(Loop::Continue((counter + 1, query)))
-                                                },
-                                                Err(error) => {
-                                                    error!("error Value::get_string for row: {:?}", error);
-                                                    Err(ErrorSeverity::Fatal(()))
-                                                },
-                                            }
+                    });
+                    let future = future
+                        .and_then(move |(stmt, query, counter)| {
+                            session.execute(&stmt)
+                                .then(move |result| {
+                                    match result {
+                                        Ok(cass_result) =>
+                                            Ok((cass_result, query, counter)),
+                                        Err(error) => {
+                                            error!("error executing statement: {:?}", error);
+                                            Err(ErrorSeverity::Fatal(()))
                                         },
-                                    Err(error) => {
-                                        error!("error get_column(0) for row: {:?}", error);
-                                        Err(ErrorSeverity::Fatal(()))
-                                    },
+                                    }
+                                })
+                        })
+                        .and_then(|(cass_result, query, counter)| {
+                            match cass_result.first_row() {
+                                None => {
+                                    info!("empty response on query: {}", query);
+                                    Ok(Loop::Continue((counter + 1, query)))
                                 },
-                        }
-                    });
-                let future = future
-                    .then(|query_result| {
-                        match query_result {
-                            Ok(Loop::Continue(state)) => {
-                                info!("everything ok, triggering restart...");
-                                Err(ErrorSeverity::Recoverable { state, })
-                            },
-                            Ok(Loop::Break(value)) =>
-                                Ok((UsingResource::Lost, Loop::Break(value))),
-                            Err(error) =>
-                                Err(error),
-                        }
-                    });
-                if counter < 3 {
-                    Either::A(future)
-                } else {
-                    Either::B(result(Ok((UsingResource::Lost, Loop::Break(())))))
-                }
-            },
-        )
-        .then(move |_result| {
-            shutdown.shutdown();
-            Ok(())
-        });
-    executor.spawn(client_future);
+                                Some(ref row) =>
+                                    match row.get_column(0) {
+                                        Ok(ref value) =>
+                                            if value.is_null() {
+                                                info!("null column for first row");
+                                                Ok(Loop::Continue((counter + 1, query)))
+                                            } else {
+                                                match Value::get_string(value) {
+                                                    Ok(data) => {
+                                                        info!("column = {} for first row", data);
+                                                        Ok(Loop::Continue((counter + 1, query)))
+                                                    },
+                                                    Err(error) => {
+                                                        error!("error Value::get_string for row: {:?}", error);
+                                                        Err(ErrorSeverity::Fatal(()))
+                                                    },
+                                                }
+                                            },
+                                        Err(error) => {
+                                            error!("error get_column(0) for row: {:?}", error);
+                                            Err(ErrorSeverity::Fatal(()))
+                                        },
+                                    },
+                            }
+                        });
+                    let future = future
+                        .then(|query_result| {
+                            match query_result {
+                                Ok(Loop::Continue(state)) => {
+                                    info!("everything ok, triggering restart...");
+                                    Err(ErrorSeverity::Recoverable { state, })
+                                },
+                                Ok(Loop::Break(value)) =>
+                                    Ok((UsingResource::Lost, Loop::Break(value))),
+                                Err(error) =>
+                                    Err(error),
+                            }
+                        });
+                    if counter < 3 {
+                        Either::A(future)
+                    } else {
+                        Either::B(result(Ok((UsingResource::Lost, Loop::Break(())))))
+                    }
+                },
+            )
+            .then(move |_result| {
+                info!("task index {} is done", task_index);
+                notify_tx.send(())
+                    .then(|_send_result| Ok(()))
+            });
+        executor.spawn(client_future);
+    }
 
     let _ = runtime.shutdown_on_idle().wait();
 }
