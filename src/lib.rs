@@ -111,7 +111,7 @@ struct ConnectedCluster {
 fn init(
     params: ClusterParams,
 )
-    -> impl Future<Item = ConnectedCluster, Error = ErrorSeverity<ClusterParams, ()>>
+    -> Box<dyn Future<Item = ConnectedCluster, Error = ErrorSeverity<ClusterParams, ()>> + Send + 'static>
 {
     let future = lazy(move || {
         let mut cluster = Cluster::default();
@@ -200,7 +200,7 @@ fn init(
                 Err(ErrorSeverity::Fatal(())),
         }
     });
-    future
+    let future = future
         .and_then(|(cluster, params)| {
             debug!("setting keyspace {:?} and connecting to cluster", params.keyspace);
             let session = Session::new();
@@ -228,7 +228,8 @@ fn init(
                     Either::B(result(Err(ErrorSeverity::Recoverable { state: params, })))
                 },
             }
-        })
+        });
+    Box::new(future)
 }
 
 fn aquire(

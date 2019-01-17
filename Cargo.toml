@@ -1,6 +1,6 @@
 [package]
 name = "ero-cassandra"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["Alexey Voznyuk <me@swizard.info>"]
 edition = "2018"
 
