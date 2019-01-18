@@ -67,7 +67,7 @@ impl Default for ClusterParams {
 
 pub struct Params<N> {
     pub cluster_params: ClusterParams,
-    pub lode_params: lode::Params<N>,
+    pub lode_params: ero::Params<N>,
 }
 
 pub struct SharedSession {
