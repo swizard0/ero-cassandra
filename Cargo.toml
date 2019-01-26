@@ -1,15 +1,15 @@
 [package]
 name = "ero-cassandra"
-version = "0.1.4"
+version = "0.2.0"
 authors = ["Alexey Voznyuk <me@swizard.info>"]
 edition = "2018"
 
 [dependencies]
 ero = { git = "https://github.com/swizard0/ero.git" }
 log = "0.4"
-tokio = "0.1"
 futures = "0.1"
 cassandra-cpp = "0.13"
 
 [dev-dependencies]
+tokio = "0.1"
 pretty_env_logger = "0.2"

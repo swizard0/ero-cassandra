@@ -24,7 +24,8 @@ use log::{
 
 use ero::{
     ErrorSeverity,
-    lode::{self, Lode},
+    lode::{self, LodeResource},
+    supervisor::Supervisor,
 };
 
 pub struct ClusterParams {
@@ -82,17 +83,17 @@ impl Deref for SharedSession {
     }
 }
 
-pub fn spawn<N>(
-    executor: &tokio::runtime::TaskExecutor,
+pub fn spawn_link<N>(
+    supervisor: &Supervisor,
     params: Params<N>,
 )
-    -> Lode<SharedSession>
+    -> LodeResource<SharedSession>
 where N: AsRef<str> + Send + 'static,
 {
     let Params { cluster_params, lode_params, } = params;
 
-    lode::shared::spawn(
-        executor,
+    lode::shared::spawn_link(
+        supervisor,
         lode_params,
         cluster_params,
         init,

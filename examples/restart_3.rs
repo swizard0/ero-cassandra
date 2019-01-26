@@ -29,7 +29,8 @@ use ero::{
     Loop,
     ErrorSeverity,
     RestartStrategy,
-    lode::{self, UsingResource},
+    lode::UsingResource,
+    supervisor::Supervisor,
 };
 
 fn main() {
@@ -48,14 +49,14 @@ fn main() {
     };
 
     pretty_env_logger::init_timed();
-    let runtime = tokio::runtime::Runtime::new().unwrap();
-    let executor = runtime.executor();
+    let mut runtime = tokio::runtime::Runtime::new().unwrap();
+    let supervisor = Supervisor::new(&runtime.executor());
 
-    let lode::Lode { resource, shutdown, } = ero_cassandra::spawn(
-        &executor,
+    let resource = ero_cassandra::spawn_link(
+        &supervisor,
         ero_cassandra::Params {
             cluster_params,
-            lode_params: lode::Params {
+            lode_params: ero::Params {
                 name: "ero_cassandra restart_3 example",
                 restart_strategy: RestartStrategy::Delay {
                     restart_after: Duration::from_secs(2),
@@ -68,14 +69,13 @@ fn main() {
 
     let (tx, rx) = mpsc::channel(0);
 
-    executor.spawn(
-        rx.fold((shutdown, 1), move |(shutdown, counter), ()| {
+    supervisor.spawn_link(
+        rx.fold(1, move |counter, ()| {
             if counter >= total {
-                shutdown.shutdown();
                 Err(())
             } else {
                 info!("received termination notification, total = {} received", counter);
-                Ok((shutdown, counter + 1))
+                Ok(counter + 1)
             }
         }).map(|_seed| ())
     );
@@ -169,8 +169,9 @@ fn main() {
                 notify_tx.send(())
                     .then(|_send_result| Ok(()))
             });
-        executor.spawn(client_future);
+        supervisor.spawn_link(client_future);
     }
 
+    supervisor.shutdown_on_idle(&mut runtime).unwrap();
     let _ = runtime.shutdown_on_idle().wait();
 }
